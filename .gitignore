@@ -1,0 +1,3 @@
+renders/*/frame_*.png
+blend/
+__pycache__/

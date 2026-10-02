@@ -21,8 +21,27 @@ import math
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
 import bpy  # noqa: E402
+
+
+def _repo_root():
+    """Locate the repo whether run from the CLI, the bpy module, or Blender's
+    text editor (where __file__ is only set for texts opened from disk)."""
+    candidates = []
+    if "__file__" in globals():
+        candidates.append(os.path.dirname(os.path.abspath(__file__)))
+    for text in getattr(bpy.data, "texts", []):
+        if text.filepath:
+            candidates.append(os.path.dirname(bpy.path.abspath(text.filepath)))
+    candidates.append(os.getcwd())
+    for c in candidates:
+        for root in (c, os.path.dirname(c)):
+            if os.path.isdir(os.path.join(root, "common")):
+                return root
+    raise RuntimeError("Open this script from its repo checkout so 'common/neilster.py' can be found.")
+
+
+sys.path.insert(0, os.path.join(_repo_root(), "common"))
 from mathutils import Vector  # noqa: E402
 import neilster as N  # noqa: E402
 
@@ -95,7 +114,7 @@ def build_rubiks(name, size, location, parent=None, hole=True, top_pattern=TOP_P
                     side = 0.84 * c
                     st.scale = (sticker_t if n.x else side, sticker_t if n.y else side, sticker_t if n.z else side)
                     st.data.materials.append(sticker_mat(col))
-                    N.bevel(st, 0.08 * c, 4)
+                    N.bevel(st, 0.08, 4)  # local units of the unit cube: scales with the sticker
                     st.parent = root
     return root
 
@@ -104,11 +123,10 @@ def main():
     scene = N.reset_scene("Rubiks_SlideDrop")
     N.setup_cycles(scene, samples=96, preview=N.cli_args()["preview"])
 
-    # --- Levels. Hole centre of every level sits on the Z axis, and the top
-    # face of level k is at z = 0 after level k-1's cube drops in.
-    # Level -2: floor 9 units, level -1: 3 units (sits flush in -2's hole),
-    # level 0: the hero cube (1 unit), dropping into level -1's hole.
-    build_rubiks("Floor_L2", CUBE * ZOOM * ZOOM, (0, 0, -CUBE * ZOOM * ZOOM / 2 - CUBE * ZOOM))
+    # --- Levels. Every level's top face is at z = 0 and its hole is centred
+    # on the Z axis: the 3-unit cube sits flush in the 9-unit cube's hole,
+    # and the 1-unit hero drops flush into the 3-unit cube's hole.
+    build_rubiks("Floor_L2", CUBE * ZOOM * ZOOM, (0, 0, -CUBE * ZOOM * ZOOM / 2))
     build_rubiks("Floor_L1", CUBE * ZOOM, (0, 0, -CUBE * ZOOM / 2))
     hero = build_rubiks("Hero", CUBE, (0, 0, 0))
 
@@ -147,22 +165,17 @@ def main():
     fcx.keyframe_points[0].interpolation = "CUBIC"
     fcx.keyframe_points[0].easing = "EASE_OUT"
 
-    # --- Camera: fixed direction, dollies toward the hole centre (origin)
-    # by ZOOM over the loop. Exponential so the zoom speed looks constant.
-    look = N.add_empty("Look", (0, 0, 0))
+    # --- Camera + lights on one rig scaled by 1/ZOOM over the loop: an exact
+    # similarity about the hole centre, so frame 241 == frame 1 one level in.
+    rig = N.add_empty("ZoomRig", (0, 0, 0))
+    look = N.add_empty("Look", (0, 0, 0), parent=rig)
     direction = Vector((1.0, -1.15, 1.75)).normalized()
     d0 = 11.5 * CUBE
     cam = N.add_camera(scene, direction * d0, look, lens=70, fstop=2.0)
     cam.data.sensor_fit = "VERTICAL"
-    for f in range(1, F + 2):
-        d = d0 * ZOOM ** (-(f - 1) / F)
-        cam.location = direction * d
-        cam.keyframe_insert("location", frame=f)
-        cam.data.dof.focus_distance = d
-        cam.data.dof.keyframe_insert("focus_distance", frame=f)
-    N.set_interp(cam, "LINEAR")
+    lights = N.studio_lighting(scene, key_energy=2500, fill_energy=700, parent=rig)
+    N.animate_similarity(scene, rig, cam, lights, 1.0 / ZOOM, fstop=2.0)
 
-    N.studio_lighting(scene, key_energy=2500, fill_energy=700)
     N.finish(scene, "rubiks_slide_drop")
 
 

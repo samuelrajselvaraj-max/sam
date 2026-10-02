@@ -63,6 +63,9 @@ def setup_cycles(scene, samples=128, preview=False):
     scene.render.engine = "CYCLES"
     cy = scene.cycles
     cy.samples = 24 if preview else samples
+    override = cli_args()["samples"]
+    if override:
+        cy.samples = override
     cy.use_denoising = not preview
     cy.use_adaptive_sampling = True
     cy.max_bounces = 6
@@ -143,8 +146,13 @@ def add_empty(name, location=(0, 0, 0), parent=None):
 
 
 # Lighting / camera ------------------------------------------------------------
-def studio_lighting(scene, key_energy=1500, fill_energy=400, world_strength=0.35):
-    """Soft overhead studio: big warm key top-left, large cool fill, grey world."""
+def studio_lighting(scene, key_energy=1500, fill_energy=400, world_strength=0.35, parent=None):
+    """Soft overhead studio: big warm key top-left, large cool fill, grey world.
+
+    Pass `parent` to attach the lights to the camera rig so the lighting is
+    identical at the loop seam (lights fixed in world space would change the
+    highlights once the camera has moved or the world has been rescaled).
+    """
     world = bpy.data.worlds.new("Studio")
     scene.world = world
     world.use_nodes = True
@@ -167,7 +175,42 @@ def studio_lighting(scene, key_energy=1500, fill_energy=400, world_strength=0.35
     fill.data.size = 12
     fill.data.color = (0.88, 0.93, 1.0)
     fill.rotation_euler = Euler((math.radians(-30), math.radians(30), 0))
+    if parent is not None:
+        for light in (key, fill):
+            light.parent = parent
     return key, fill
+
+
+def animate_similarity(scene, rig, cam, lights, ratio, fstop):
+    """Drive an infinite-zoom loop as one exact similarity about the rig origin.
+
+    The lights are children of `rig`, whose scale goes from 1 to `ratio`
+    exponentially over the loop (area lights scale with their parent). The
+    camera is NOT parented (a scaled camera upsets Blender's focus distance);
+    its location and focus distance are keyframed along its own view ray
+    instead. Two more things don't scale on their own, so they are keyframed:
+      * the aperture: f-stop = fstop / scale (the physical aperture shrinks),
+      * light power: energy * scale^2 (same irradiance at scaled distances).
+    With this, frame LOOP_FRAMES + 1 is identical to frame 1 one level deeper.
+    """
+    base = [light.data.energy for light in lights]
+    cam_dir = cam.location.copy()
+    cam.data.dof.focus_object = None
+    for f in range(1, LOOP_FRAMES + 2):
+        s = ratio ** ((f - 1) / LOOP_FRAMES)
+        rig.scale = (s, s, s)
+        rig.keyframe_insert("scale", frame=f)
+        cam.location = cam_dir * s
+        cam.keyframe_insert("location", frame=f)
+        cam.data.dof.focus_distance = cam_dir.length * s
+        cam.data.dof.keyframe_insert("focus_distance", frame=f)
+        cam.data.dof.aperture_fstop = fstop / s
+        cam.data.dof.keyframe_insert("aperture_fstop", frame=f)
+        for light, e in zip(lights, base):
+            light.data.energy = e * s * s
+            light.data.keyframe_insert("energy", frame=f)
+    set_interp(rig, "LINEAR")
+    set_interp(cam, "LINEAR")
 
 
 def add_camera(scene, location, target, lens=85, fstop=2.8, focus_target=None):
@@ -274,6 +317,8 @@ def cli_args():
         "preview": "--preview" in argv,
         "frames": [int(a.split("=")[1]) for a in argv if a.startswith("--frame=")],
         "save": "--save" in argv,
+        "samples": next((int(a.split("=")[1]) for a in argv if a.startswith("--samples=")), None),
+        "animation": "--animation" in argv,
     }
 
 
@@ -309,3 +354,71 @@ def finish(scene, scene_slug, build_fn_name="main"):
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(repo, "blend", f"{scene_slug}.blend"))
     if args["render"]:
         render_frames(scene, out_dir, args["frames"] or None, preview=args["preview"])
+
+
+# Rigid tumble baker -----------------------------------------------------------
+def bake_tumbles(obj, size, start_pos, moves, start_frame=1, settle_frames=3):
+    """Bake a chain of 90-degree edge tumbles into per-frame keyframes.
+
+    moves: list of dicts {"dir": (x, y), "frames": n, "drop": float}.
+      * dir   - unit travel direction in XY (axis aligned).
+      * frames- duration of the move.
+      * drop  - how far the cube falls after tipping over the edge (0 = flat
+                tumble on a floor, >0 = tumble off a ledge and fall).
+    Returns the final (position, quaternion).
+    """
+    from mathutils import Quaternion, Matrix
+    half = size / 2
+    pos = Vector(start_pos)
+    quat = Quaternion((1, 0, 0, 0))
+    obj.rotation_mode = "QUATERNION"
+    frame = start_frame
+
+    def key(f, p, q):
+        obj.location = p
+        obj.rotation_quaternion = q
+        obj.keyframe_insert("location", frame=f)
+        obj.keyframe_insert("rotation_quaternion", frame=f)
+
+    key(frame, pos, quat)
+    for mv in moves:
+        d = Vector((mv["dir"][0], mv["dir"][1], 0.0)).normalized()
+        n = mv["frames"]
+        drop = mv.get("drop", 0.0)
+        axis = Vector((0, 0, 1)).cross(d)
+        pivot = pos + d * half - Vector((0, 0, half))
+        rel = pos - pivot
+        tip_frames = n if drop == 0 else max(4, int(n * 0.4))
+        fall_frames = 0 if drop == 0 else n - tip_frames
+        # Tip over the edge, accelerating like a falling block.
+        for i in range(1, tip_frames + 1):
+            s = i / tip_frames
+            theta = (math.pi / 2) * (s ** 1.7)
+            rot = Matrix.Rotation(theta, 4, axis)
+            p = pivot + rot @ rel
+            q = rot.to_quaternion() @ quat
+            key(frame + i, p, q)
+        rot = Matrix.Rotation(math.pi / 2, 4, axis)
+        pos = pivot + rot @ rel
+        quat = rot.to_quaternion() @ quat
+        frame += tip_frames
+        if fall_frames:
+            # Free fall with a quadratic ease-in, then a small bounce.
+            bounce = 0.1 * size
+            land = int(fall_frames * 0.7)
+            for i in range(1, fall_frames + 1):
+                if i <= land:
+                    s = i / land
+                    z = -drop * s * s
+                else:
+                    s = (i - land) / (fall_frames - land)
+                    z = -drop + bounce * math.sin(math.pi * s)
+                key(frame + i, pos + Vector((0, 0, z)), quat)
+            pos = pos + Vector((0, 0, -drop))
+            frame += fall_frames
+        # Hold for a beat so each clack reads.
+        if settle_frames:
+            key(frame + settle_frames, pos, quat)
+            frame += settle_frames
+    set_interp(obj, "LINEAR")
+    return pos, quat
