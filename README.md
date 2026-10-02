@@ -57,10 +57,15 @@ All three scenes are built so that frame 241 is pixel-identical to frame 1;
   four big-die heights, colours repeat every four. The small die makes eight
   90-degree tumbles about alternating axes, which multiply out to the identity,
   so even its pips line up at the seam.
-* **Foosball** – the table (pitch, rails, rods, players and the animated
-  ball) is one collection; nested levels are collection instances scaled by
-  0.3 about the centre spot, so every level plays the same animation in sync.
-  The ball ends at 0.3 x its start position and shrinks by 0.3 over the loop.
+* **Foosball** – the table (cabinet, pitch, rods, men and the animated ball)
+  is one collection; nested levels are collection instances scaled by 0.3
+  about a fixed point just above the centre spot (so each mini table stands
+  on its parent's pitch), and every level plays the same animation in sync.
+  The ball is true projectile motion under one gravity constant: red striker
+  kick, pitch bounce with restitution 0.62 and preserved horizontal velocity,
+  blue keeper lob, landing at the mini striker's foot. Both kicks are
+  impulses timed to the rod swings; the red strike happens exactly at the
+  seam. The ball shrinks by 0.3 over the loop so it fits the level it lands in.
 
 Three details that are easy to miss when making an infinite-zoom loop, all
 handled in `common/neilster.py`:
