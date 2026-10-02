@@ -36,6 +36,9 @@ for scene_name in wanted:
     scene = bpy.context.scene
     if "--preview" in flags:
         scene.render.resolution_percentage = 25
+    for flag in flags:
+        if flag.startswith("--percent="):
+            scene.render.resolution_percentage = int(flag.split("=")[1])
     scene.frame_end = N.LOOP_FRAMES
     scene.render.image_settings.file_format = "PNG"
     scene.render.filepath = os.path.join(out, "frame_")
