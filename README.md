@@ -3,8 +3,8 @@
 Procedural recreations of the content on the
 [Neilster](https://www.youtube.com/@NEILSTER666/shorts) YouTube Shorts channel:
 8-second, 9:16, perfectly looping CGI animations of glossy toy-plastic objects
-(Rubik's cubes, dice, a foosball table) with soft studio lighting, shallow
-depth of field and a self-similar "infinite" structure.
+(Rubik's cubes, dice) with soft studio lighting, shallow depth of field and a
+self-similar "infinite" structure.
 
 Everything is a Python script that builds the whole scene from nothing, so
 there are no `.blend` files to download: open a script in Blender and run it.
@@ -13,7 +13,6 @@ there are no `.blend` files to download: open a script in Blender and run it.
 | --- | --- | --- | --- |
 | Rubik's Cube Slide and Drop | `scenes/rubiks_slide_drop.py` | "Satisfying Rubik's Cube Slide and Drop Perfect Loop" | 3x infinite zoom: the dropped cube's top face becomes the next floor |
 | Dice Roll and Drop | `scenes/dice_roll_loop.py` | "Satisfying Dice Roll and Drop Perfect Loop" | Square-helix staircase of dice; camera orbits 360 degrees and descends 4 steps |
-| Football Infinite Loop | `scenes/football_loop.py` | "Satisfying football Infinite loop" | Droste zoom into a miniature foosball table sunk into the centre circle |
 
 Preview frames (25 %, 24 samples) are in `renders/<scene>/`.
 
@@ -28,7 +27,7 @@ disk rather than pasting it, so it can find `common/neilster.py`.)
 
 ```bash
 blender -b -P scenes/dice_roll_loop.py -- --render --preview   # 4 preview stills
-blender -b -P render_all.py -- --preview                       # all three loops as MP4
+blender -b -P render_all.py -- --preview                       # both loops as MP4
 blender -b -P render_all.py                                    # full quality
 ```
 
@@ -41,11 +40,11 @@ python render_all.py --preview
 
 Flags understood by every scene script: `--render` (write stills),
 `--preview` (25 % size, 24 samples), `--frame=N` (repeatable),
-`--samples=N`, `--save` (also write `blend/<scene>.blend`).
+`--samples=N`, `--percent=N` (render_all only), `--save` (also write `blend/<scene>.blend`).
 
 ## How the loops close
 
-All three scenes are built so that frame 241 is pixel-identical to frame 1;
+Both scenes are built so that frame 241 is pixel-identical to frame 1;
 `render_all.py` renders frames 1-240, so the MP4 loops with no visible seam.
 
 * **Rubik's** – every level's top face is at z = 0 with its centre cubie
@@ -57,15 +56,6 @@ All three scenes are built so that frame 241 is pixel-identical to frame 1;
   four big-die heights, colours repeat every four. The small die makes eight
   90-degree tumbles about alternating axes, which multiply out to the identity,
   so even its pips line up at the seam.
-* **Foosball** – the table (cabinet, pitch, rods, men and the animated ball)
-  is one collection; nested levels are collection instances scaled by 0.3
-  about a fixed point just above the centre spot (so each mini table stands
-  on its parent's pitch), and every level plays the same animation in sync.
-  The ball is true projectile motion under one gravity constant: red striker
-  kick, pitch bounce with restitution 0.62 and preserved horizontal velocity,
-  blue keeper lob, landing at the mini striker's foot. Both kicks are
-  impulses timed to the rod swings; the red strike happens exactly at the
-  seam. The ball shrinks by 0.3 over the loop so it fits the level it lands in.
 
 Three details that are easy to miss when making an infinite-zoom loop, all
 handled in `common/neilster.py`:
@@ -92,6 +82,4 @@ renders/<scene>/     preview stills (and MP4 output after render_all.py)
 
 The scripts render picture only. For the channel's feel, add in the edit:
 a crisp plastic *clack* on every die/cube landing (dice: one every second;
-Rubik's: one drop at 0:04), a soft slide/whoosh on the Rubik's glide, and a
-plastic *thwack* on each foosball kick (0:00, 0:02, 0:03.5) with a hollow
-*tock* on the landing at 0:06.5.
+Rubik's: one drop at 0:04), and a soft slide/whoosh on the Rubik's glide.

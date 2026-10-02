@@ -4,6 +4,7 @@
 Usage (from the repo root):
     python render_all.py                 # all scenes, full quality, PNG frames + MP4
     python render_all.py --preview       # 25% size, 24 samples: quick motion check
+    python render_all.py --percent=50 --samples=40   # mid-quality
     python render_all.py rubiks_slide_drop --samples=64
     blender -b -P render_all.py -- --preview    # same, using a Blender install
 
@@ -18,7 +19,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-SCENES = ["rubiks_slide_drop", "dice_roll_loop", "football_loop"]
+SCENES = ["rubiks_slide_drop", "dice_roll_loop"]
 sys.path.insert(0, os.path.join(ROOT, "common"))
 import bpy  # noqa: E402
 import neilster as N  # noqa: E402
