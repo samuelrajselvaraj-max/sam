@@ -52,7 +52,7 @@ W, L = 6.0, 10.0          # pitch size (x, y)
 CIRCLE_R = 0.9            # centre circle radius
 RATIO = (2 * CIRCLE_R) / W  # 0.3: nested table width equals the circle
 ROD_Z = 0.55
-BALL_R = 0.19
+BALL_R = 0.24
 RODS = [  # (y, team, players)
     (-4.1, "red", 1), (-3.0, "red", 2), (-1.7, "blue", 3), (-0.5, "red", 5),
     (0.5, "blue", 5), (1.7, "red", 3), (3.0, "blue", 2), (4.1, "blue", 1),
@@ -300,12 +300,12 @@ def main():
     # similarity about the centre spot, so frame 241 == frame 1 one level in.
     rig = N.add_empty("ZoomRig", (0, 0, 0))
     look = N.add_empty("Look", (0, 0, 0), parent=rig)
-    direction = Vector((0.45, -0.8, 1.7)).normalized()
-    d0 = 17.0
-    cam = N.add_camera(scene, direction * d0, look, lens=50, fstop=2.8)
+    direction = Vector((0.28, -0.55, 2.0)).normalized()
+    d0 = 26.0
+    cam = N.add_camera(scene, direction * d0, look, lens=70, fstop=4.0)
     cam.data.sensor_fit = "VERTICAL"
-    lights = N.studio_lighting(scene, key_energy=5000, fill_energy=1500, world_strength=0.5, parent=rig)
-    N.animate_similarity(scene, rig, cam, lights, RATIO, fstop=2.8)
+    lights = N.studio_lighting(scene, key_energy=9000, fill_energy=3000, world_strength=0.45, parent=rig, target=look, scale=1.6)
+    N.animate_similarity(scene, rig, cam, lights, RATIO, fstop=4.0)
 
     N.finish(scene, "football_loop")
 

@@ -159,7 +159,7 @@ def main():
 
     # Lights ride on the rig: the whole camera+light system is rigid, so the
     # glossy highlights are identical at the loop seam.
-    N.studio_lighting(scene, key_energy=4000, fill_energy=1200, parent=rig)
+    N.studio_lighting(scene, key_energy=6000, fill_energy=1800, parent=rig, target=look, scale=1.3)
     N.finish(scene, "dice_roll_loop")
 
 

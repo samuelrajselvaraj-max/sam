@@ -66,7 +66,12 @@ def setup_cycles(scene, samples=128, preview=False):
     override = cli_args()["samples"]
     if override:
         cy.samples = override
-    cy.use_denoising = not preview
+    cy.use_denoising = True
+    try:
+        cy.denoiser = "OPENIMAGEDENOISE"
+        cy.denoising_use_gpu = False
+    except Exception:
+        pass
     cy.use_adaptive_sampling = True
     cy.max_bounces = 6
     try:
@@ -82,19 +87,33 @@ def setup_cycles(scene, samples=128, preview=False):
 
 
 # Materials --------------------------------------------------------------------
-def plastic(name, hex_color, roughness=0.22, coat=0.4):
-    """Glossy toy plastic with a clearcoat, the signature look of the channel."""
+def plastic(name, hex_color, roughness=0.22, coat=0.4, bump=0.015):
+    """Glossy toy plastic with a clearcoat, the signature look of the channel.
+
+    A very fine noise bump under the coat breaks up the reflections of the
+    softboxes so the plastic reads as moulded, not CG-perfect.
+    """
     mat = bpy.data.materials.get(name)
     if mat:
         return mat
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes["Principled BSDF"]
+    nt = mat.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
     bsdf.inputs["Base Color"].default_value = hex_rgba(hex_color)
     bsdf.inputs["Roughness"].default_value = roughness
     bsdf.inputs["Coat Weight"].default_value = coat
-    bsdf.inputs["Coat Roughness"].default_value = 0.05
-    bsdf.inputs["Specular IOR Level"].default_value = 0.5
+    bsdf.inputs["Coat Roughness"].default_value = 0.03
+    bsdf.inputs["Specular IOR Level"].default_value = 0.6
+    if bump:
+        noise = nt.nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 180.0
+        noise.inputs["Detail"].default_value = 3.0
+        bmp = nt.nodes.new("ShaderNodeBump")
+        bmp.inputs["Strength"].default_value = bump
+        bmp.inputs["Distance"].default_value = 0.01
+        nt.links.new(noise.outputs["Fac"], bmp.inputs["Height"])
+        nt.links.new(bmp.outputs["Normal"], bsdf.inputs["Normal"])
     return mat
 
 
@@ -146,39 +165,65 @@ def add_empty(name, location=(0, 0, 0), parent=None):
 
 
 # Lighting / camera ------------------------------------------------------------
-def studio_lighting(scene, key_energy=1500, fill_energy=400, world_strength=0.35, parent=None):
-    """Soft overhead studio: big warm key top-left, large cool fill, grey world.
+def _softbox(name, size, location, target, energy, color, parent):
+    """Area light that is also visible in reflections, like a real softbox."""
+    bpy.ops.object.light_add(type="AREA", location=location)
+    light = bpy.context.active_object
+    light.name = name
+    light.data.shape = "RECTANGLE"
+    light.data.size, light.data.size_y = size
+    light.data.energy = energy
+    light.data.color = color
+    light.data.spread = math.radians(140)
+    track = light.constraints.new("TRACK_TO")
+    track.target = target
+    track.track_axis = "TRACK_NEGATIVE_Z"
+    track.up_axis = "UP_Y"
+    if parent is not None:
+        light.parent = parent
+    return light
 
+
+def studio_lighting(scene, key_energy=1500, fill_energy=400, world_strength=0.35, parent=None,
+                    target=None, scale=1.0):
+    """Product-shot studio: graded world, a big warm key softbox from top-left,
+    a cool fill from the right, and a hard-ish rim from behind for edge
+    definition. Softboxes are rectangular and show up in the plastic's
+    reflections, which is what sells the glossy toy look.
+
+    `scale` sets the physical size of the rig for scenes of different size.
     Pass `parent` to attach the lights to the camera rig so the lighting is
-    identical at the loop seam (lights fixed in world space would change the
-    highlights once the camera has moved or the world has been rescaled).
+    identical at the loop seam.
     """
     world = bpy.data.worlds.new("Studio")
     scene.world = world
     world.use_nodes = True
-    bg = world.node_tree.nodes["Background"]
-    bg.inputs["Color"].default_value = (0.85, 0.87, 0.9, 1)
+    nt = world.node_tree
+    bg = nt.nodes["Background"]
     bg.inputs["Strength"].default_value = world_strength
+    # Vertical gradient: dark floor glow below, soft light dome above.
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].position = 0.35
+    ramp.color_ramp.elements[0].color = (0.10, 0.11, 0.13, 1)
+    ramp.color_ramp.elements[1].position = 0.75
+    ramp.color_ramp.elements[1].color = (0.85, 0.88, 0.95, 1)
+    maprange = nt.nodes.new("ShaderNodeMapRange")
+    maprange.inputs["From Min"].default_value = -1.0
+    maprange.inputs["From Max"].default_value = 1.0
+    nt.links.new(coord.outputs["Generated"], sep.inputs["Vector"])
+    nt.links.new(sep.outputs["Z"], maprange.inputs["Value"])
+    nt.links.new(maprange.outputs["Result"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], bg.inputs["Color"])
 
-    bpy.ops.object.light_add(type="AREA", location=(-6, -4, 10))
-    key = bpy.context.active_object
-    key.name = "Key"
-    key.data.energy = key_energy
-    key.data.size = 8
-    key.data.color = (1.0, 0.95, 0.88)
-    key.rotation_euler = Euler((math.radians(28), math.radians(-22), 0))
-
-    bpy.ops.object.light_add(type="AREA", location=(7, 5, 8))
-    fill = bpy.context.active_object
-    fill.name = "Fill"
-    fill.data.energy = fill_energy
-    fill.data.size = 12
-    fill.data.color = (0.88, 0.93, 1.0)
-    fill.rotation_euler = Euler((math.radians(-30), math.radians(30), 0))
-    if parent is not None:
-        for light in (key, fill):
-            light.parent = parent
-    return key, fill
+    if target is None:
+        target = add_empty("LightTarget", (0, 0, 0), parent=parent)
+    k = scale
+    key = _softbox("Key", (7 * k, 5 * k), (-7 * k, -6 * k, 11 * k), target, key_energy, (1.0, 0.96, 0.9), parent)
+    fill = _softbox("Fill", (10 * k, 8 * k), (9 * k, 3 * k, 7 * k), target, fill_energy, (0.85, 0.9, 1.0), parent)
+    rim = _softbox("Rim", (2.5 * k, 6 * k), (3 * k, 9 * k, 6 * k), target, key_energy * 0.6, (1.0, 1.0, 1.0), parent)
+    return key, fill, rim
 
 
 def animate_similarity(scene, rig, cam, lights, ratio, fstop):

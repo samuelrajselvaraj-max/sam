@@ -173,7 +173,7 @@ def main():
     d0 = 11.5 * CUBE
     cam = N.add_camera(scene, direction * d0, look, lens=70, fstop=2.0)
     cam.data.sensor_fit = "VERTICAL"
-    lights = N.studio_lighting(scene, key_energy=2500, fill_energy=700, parent=rig)
+    lights = N.studio_lighting(scene, key_energy=4000, fill_energy=1200, parent=rig, target=look, scale=1.0)
     N.animate_similarity(scene, rig, cam, lights, 1.0 / ZOOM, fstop=2.0)
 
     N.finish(scene, "rubiks_slide_drop")
